@@ -1,0 +1,84 @@
+version: '3.8'
+services:
+  elasticsearch-hot:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.1
+    container_name: es-hot
+    environment:
+      - node.name=es-hot
+      - cluster.name=elk-cluster
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-hot-data:/usr/share/elasticsearch/data
+      - ./elasticsearch/hot/jvm.options:/etc/elasticsearch/jvm.options
+    networks:
+      - elk-net
+
+  elasticsearch-warm:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.1
+    container_name: es-warm
+    environment:
+      - node.name=es-warm
+      - cluster.name=elk-cluster
+      - discovery.seed_hosts=es-hot
+      - cluster.initial_master_nodes=es-hot
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+    ports: []
+    volumes:
+      - es-warm-data:/usr/share/elasticsearch/data
+      - ./elasticsearch/warm/jvm.options:/etc/elasticsearch/jvm.options
+    depends_on:
+      - elasticsearch-hot
+    networks:
+      - elk-net
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:9.3.1
+    container_name: logstash
+    ports:
+      - "5044:5044"
+    volumes:
+      - ./logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    depends_on:
+      - elasticsearch-hot
+    networks:
+      - elk-net
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.3.1
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://es-hot:9200
+    depends_on:
+      - elasticsearch-hot
+    volumes:
+      - ./kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml
+    networks:
+      - elk-net
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.3.1
+    container_name: filebeat
+    user: root
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./filebeat/config/filebeat.yml:/usr/share/filebeat/filebeat.yml
+    depends_on:
+      - logstash
+    networks:
+      - elk-net
+
+
+volumes:
+  es-hot-data:
+  es-warm-data:
+
+networks:
+  elk-net:
+    driver: bridge
